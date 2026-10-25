@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 一键重启：先停桥，再起。
-#   ./restart.sh          只重启 qq-bridge
+# 一键重启：先停桥，再前台起。
+#   ./restart.sh          只重启 qq-bridge（前台，Ctrl+C 下线）
 #   ./restart.sh --web    重启桥，并确保 dsh web 也在（端口 8080）
 set -uo pipefail
 

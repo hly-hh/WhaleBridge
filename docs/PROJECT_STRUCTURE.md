@@ -177,9 +177,11 @@ qq-bridge/data/                 # 全部不进 git
 
 ### 3.3 PID 与日志
 
-- `start.sh` 用 `setsid nohup` 拉起 bridge，脱离当前终端；日志追加到 `data/logs/qq-bridge.log`。
+- `start.sh` 在前台跑 `node src/index.js`，输出通过 `tee` 同时进终端和 `data/logs/qq-bridge.log`；启动时把进程号写入 `qq-bridge.pid`。
+- 前台模式下按 Ctrl+C，脚本的 EXIT trap 会停止桥（必要时 SIGKILL）、删除 pid 文件；`--web` 启动的 dsh web 也会一并停掉，容器不动。
+- 如果已有桥在跑，前台模式不会静默再起一份：要求先 `./stop.sh` 或 `./start.sh --restart`。
 - 手动跑过 `node src/index.js` 的进程没有 pid 文件，`start.sh` / `stop.sh` 会用 `pgrep -f '^node src/index.js'` 认领。
-- `stop.sh` 先 SIGTERM，最多等 4 秒，再 SIGKILL，最后删 pid 文件。
+- `stop.sh` 先 SIGTERM，最多等 4 秒，再 SIGKILL，最后删 pid 文件。前台 `start.sh` 会感知到桥退出并打印退出码。
 - `status.sh` 的探活是另起一个 `node src/index.js --probe`，和常驻进程无关。
 
 ## 4. 端口与地址
@@ -203,10 +205,11 @@ qq-bridge/data/                 # 全部不进 git
 2. `docker inspect` 容器：不存在 → 报错并提示 docker run；停止 → `docker start`。
 3. 从 `docker logs` 取 VNC 密码，打印网页入口：QQ 登录 noVNC（6081）、SnowLuma 管理页（5099）。
 4. 最多等 60 秒，直到能 `docker exec … cat onebot.json`（QQ 登录后才有；volume 里已存在时会立即通过）。
-4. 可选 `--web`：用 `setsid nohup dsh web --no-open --port 8080` 起网页，写 `dsh-web.pid`。
-5. 认领/复用已有 bridge 进程；`--restart` 时先杀旧进程。
-6. `setsid nohup node src/index.js` 起桥，写 `qq-bridge.pid`，失败则打印日志尾部。
-7. 跑一次 `--probe` 探活；成功显示 QQ 昵称，失败则打印扫码登录步骤（noVNC 地址 + VNC 密码 + 登录后自动重连说明）。
+5. 可选 `--web`：用 `setsid nohup dsh web --no-open --port 8080` 起网页，写 `dsh-web.pid`，并记住是本次启动的（退出时一起关）。
+6. 处理已有桥：没有 `--restart` 就报错退出，避免前台和后桥抢同一会话；有 `--restart` 先停旧进程。
+7. 先跑一次 `--probe` 探活：成功显示 QQ 昵称，失败打印扫码登录步骤（noVNC + VNC 密码）。
+8. **前台**启动 `node src/index.js`，输出用 `tee` 同时写终端和 `qq-bridge.log`，pid 写入 `qq-bridge.pid`。
+9. 注册 EXIT/INT/TERM trap：Ctrl+C 或桥自己退出时，停桥、删 pid、停本次起的 dsh web，容器保留。
 
 ### 5.2 `stop.sh`
 

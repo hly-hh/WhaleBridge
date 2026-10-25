@@ -138,14 +138,16 @@ cp qq-bridge/config.example.json qq-bridge/config.json   # start.sh 也会自动
 ## 日常使用
 
 ```bash
-./start.sh              # 起容器（如果没起）+ 起 qq-bridge
+./start.sh              # 前台起容器 + 桥，日志直接打在终端
 ./start.sh --web        # 顺便起 dsh web（http://localhost:8080）
-./start.sh --restart    # 重启 qq-bridge
+./start.sh --restart    # 先停旧桥，再前台起
 ./stop.sh               # 只停 qq-bridge，QQ 还挂在容器里
 ./stop.sh --all         # 连 dsh web 和容器一起停
-./restart.sh            # = stop.sh + start.sh
+./restart.sh            # = stop.sh + start.sh（前台）
 ./status.sh             # 容器 / QQ / 桥 / dsh web / 最近日志
 ```
+
+`start.sh` 会一直占着终端：**Ctrl+C 自动停桥并清理 pid**（`--web` 起的 dsh web 也一起停）；容器和 QQ 不动，下次启动不用重新扫码。
 
 `start.sh` 和 `status.sh` 会直接打印网页入口（QQ 登录用的 noVNC、SnowLuma 管理页，以及当前容器的 VNC 密码）；QQ 没登录时会额外给出扫码步骤。
 
@@ -161,7 +163,7 @@ npm run probe    # 只探活
 npm run dry -- 在吗
 ```
 
-日志：
+日志会同时写到终端和文件：
 
 ```bash
 tail -f qq-bridge/data/logs/qq-bridge.log

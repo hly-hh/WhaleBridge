@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# 一键启动：SnowLuma 容器 -> （可选）dsh web -> qq-bridge
-#   ./start.sh            只起容器 + 桥
+# 一键启动（前台）：SnowLuma 容器 ->（可选）dsh web -> qq-bridge
+#   ./start.sh            前台跑桥，日志同时进终端和 qq-bridge/data/logs
 #   ./start.sh --web      顺便起 dsh web（网页旁观用，端口 8080）
 #   ./start.sh --restart  先杀掉旧桥再起
+#   Ctrl+C                下线：停桥（和本次起的 dsh web），容器/QQ 保留
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,12 +18,15 @@ WEB_PORT="${DSH_WEB_PORT:-8080}"
 
 WITH_WEB=0
 RESTART=0
+WEB_STARTED=0
+BRIDGE_PID=""
+
 for arg in "$@"; do
     case "$arg" in
         --web) WITH_WEB=1 ;;
         --restart) RESTART=1 ;;
         -h | --help)
-            sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -68,7 +72,7 @@ print_login_help() {
     fi
     printf '    3. 用手机 QQ 扫码登录小号，建议勾选「自动登录」\n'
     printf '    4. 登录后 OneBot 才会监听 3001，桥会在 30 秒内自动重连\n'
-    printf '       想立刻恢复：./start.sh --restart\n'
+    printf '       不用重启 start.sh；扫码后回这里看日志即可\n'
     printf '       确认登录：docker logs %s | grep OneBot.WS-Server\n\n' "$CONTAINER"
 }
 
@@ -82,9 +86,42 @@ check_qq() {
         return 0
     fi
     printf '%s\n' "$out" | sed 's/^/  /'
-    warn "桥在跑，但 QQ 还没上线"
+    warn "QQ 还没上线"
     print_login_help
     return 1
+}
+
+# Ctrl+C / 退出时收拾干净：桥、本次起的 dsh web、pid 文件
+cleanup() {
+    [ "${CLEANED:-0}" = "1" ] && return 0
+    CLEANED=1
+    trap - EXIT INT TERM
+
+    if [ -n "$BRIDGE_PID" ] && kill -0 "$BRIDGE_PID" 2>/dev/null; then
+        kill "$BRIDGE_PID" 2>/dev/null
+        for _ in $(seq 1 20); do
+            kill -0 "$BRIDGE_PID" 2>/dev/null || break
+            sleep 0.2
+        done
+        kill -0 "$BRIDGE_PID" 2>/dev/null && kill -9 "$BRIDGE_PID" 2>/dev/null
+    fi
+    rm -f "$PID_FILE"
+
+    if [ "$WEB_STARTED" = "1" ]; then
+        local wpid
+        wpid="$(cat "$WEB_PID" 2>/dev/null)"
+        if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
+            kill "$wpid" 2>/dev/null
+            for _ in $(seq 1 20); do
+                kill -0 "$wpid" 2>/dev/null || break
+                sleep 0.2
+            done
+            kill -0 "$wpid" 2>/dev/null && kill -9 "$wpid" 2>/dev/null
+        fi
+        rm -f "$WEB_PID"
+    fi
+
+    printf '\n  \033[33m已下线\033[0m（容器 %s 和 QQ 还在后台跑；一起关：./stop.sh --all）\n\n' "$CONTAINER"
 }
 
 # ---------- 0. 环境 ----------
@@ -114,7 +151,7 @@ fi
 VNC_PASS="$(docker logs "$CONTAINER" 2>&1 | grep -m1 'remote desktop password:' | sed 's/.*remote desktop password:[[:space:]]*//' | tr -d '\r')"
 print_entries
 
-# 等 OneBot 配置能被读到（QQ 登录后才会生成/刷新）
+# 检查 OneBot 配置（QQ 登录后才会生成/刷新）
 say "检查 OneBot 配置…"
 READY=0
 for _ in $(seq 1 40); do
@@ -133,15 +170,17 @@ fi
 # ---------- 2. dsh web（可选） ----------
 if [ "$WITH_WEB" = "1" ]; then
     if [ -f "$WEB_PID" ] && kill -0 "$(cat "$WEB_PID" 2>/dev/null)" 2>/dev/null; then
-        ok "dsh web 已经在跑（pid $(cat "$WEB_PID")）"
+        ok "dsh web 已经在跑（pid $(cat "$WEB_PID")，退出时不会关它）"
     else
         say "启动 dsh web（127.0.0.1:$WEB_PORT）"
         (cd "$BRIDGE" && setsid nohup dsh web --no-open --port "$WEB_PORT" >>"$WEB_LOG" 2>&1 </dev/null & echo $! >"$WEB_PID")
+        WEB_STARTED=1
         sleep 3
         if kill -0 "$(cat "$WEB_PID")" 2>/dev/null; then
-            ok "dsh web → http://localhost:$WEB_PORT"
+            ok "dsh web → http://localhost:$WEB_PORT（Ctrl+C 时一起关）"
         else
             warn "dsh web 没起来，看 $WEB_LOG"
+            WEB_STARTED=0
         fi
     fi
 fi
@@ -154,39 +193,62 @@ if [ ! -f "$PID_FILE" ]; then
 fi
 
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    old_pid="$(cat "$PID_FILE")"
     if [ "$RESTART" = "1" ]; then
-        say "重启桥…"
-        kill "$(cat "$PID_FILE")" 2>/dev/null
-        sleep 1
+        say "停掉旧桥（pid $old_pid）…"
+        kill "$old_pid" 2>/dev/null
+        for _ in $(seq 1 20); do
+            kill -0 "$old_pid" 2>/dev/null || break
+            sleep 0.2
+        done
+        kill -0 "$old_pid" 2>/dev/null && kill -9 "$old_pid" 2>/dev/null
+        rm -f "$PID_FILE"
     else
-        ok "qq-bridge 已经在跑（pid $(cat "$PID_FILE")）"
-        say "看日志：tail -f $LOG"
-        check_qq || true
-        exit 0
+        warn "qq-bridge 已经在跑（pid $old_pid）"
+        say "start.sh 现在是前台模式，不能接管后台的桥"
+        say "先 ./stop.sh，或者用 ./start.sh --restart"
+        exit 1
     fi
 fi
 
-printf '\n===== 启动 %s =====\n' "$(date '+%F %T')" >>"$LOG"
-(cd "$BRIDGE" && setsid nohup node src/index.js >>"$LOG" 2>&1 </dev/null & echo $! >"$PID_FILE")
-sleep 2
+# 先探活，再前台起桥；这样登录提示不会把终端刷满
+printf '\n'
+check_qq || true
 
-if ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT TERM
+
+printf '\n===== 启动 %s =====\n' "$(date '+%F %T')" >>"$LOG"
+say "前台启动 qq-bridge（Ctrl+C 下线，日志同时写入 $LOG）"
+
+(
+    cd "$BRIDGE" || exit 1
+    exec node src/index.js
+) > >(tee -a "$LOG") 2>&1 &
+BRIDGE_PID=$!
+echo "$BRIDGE_PID" >"$PID_FILE"
+
+sleep 2
+if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+    wait "$BRIDGE_PID"
     tail -20 "$LOG"
     die "qq-bridge 没起来（日志在上面）"
 fi
-ok "qq-bridge 起来了（pid $(cat "$PID_FILE")）"
-
-# ---------- 4. 探活 ----------
-check_qq || true
+ok "qq-bridge 在前台跑（pid $BRIDGE_PID）"
 
 cat <<EOF
+
+  小鲸鱼在跑了。Ctrl+C 下线（只停桥；容器和 QQ 继续跑）
 
   接下来：
     QQ         用你的号给 $(node -p "require('$BRIDGE/config.json').access.owner" 2>/dev/null || echo '小号') 发消息
     登录 QQ    http://localhost:6081（noVNC）
     管理        http://localhost:5099（SnowLuma WebUI）
-    看日志     tail -f $LOG
-    看状态     ./status.sh
-    关掉       ./stop.sh
+    看状态     ./status.sh（另开一个终端）
+    全关       ./stop.sh --all
 
 EOF
+
+wait "$BRIDGE_PID"
+printf '\n  qq-bridge 已退出（code %s）\n' "$?"
