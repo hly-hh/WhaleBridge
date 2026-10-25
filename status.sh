@@ -20,7 +20,15 @@ else
 fi
 
 head_ "SnowLuma（自动探活）"
-(cd "$BRIDGE" && timeout 15 node src/index.js --probe 2>&1 | sed 's/^/  /') || line "✗ 探活失败（QQ 没登录 / 端口不对 / 容器没起）"
+probe_out="$(cd "$BRIDGE" && timeout 15 node src/index.js --probe 2>&1)"
+printf '%s\n' "$probe_out" | sed 's/^/  /'
+if ! printf '%s\n' "$probe_out" | grep -q 'QQ 在线'; then
+    vnc_pass="$(docker logs "$CONTAINER" 2>&1 | grep -m1 'remote desktop password:' | sed 's/.*remote desktop password:[[:space:]]*//' | tr -d '\r')"
+    echo
+    line "  提示：QQ 没登录时 OneBot 不会监听 3001，桥会一直重连"
+    line "  QQ 登录   http://localhost:6081（noVNC）${vnc_pass:+ · VNC 密码：$vnc_pass}"
+    line "  管理      http://localhost:5099（SnowLuma WebUI）"
+fi
 
 head_ "qq-bridge"
 pid="$(cat "$BRIDGE/data/qq-bridge.pid" 2>/dev/null || pgrep -f '^node src/index.js' | head -1)"

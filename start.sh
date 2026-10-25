@@ -40,6 +40,53 @@ die() {
     exit 1
 }
 
+LOGIN_HELP_SHOWN=0
+VNC_PASS=""
+
+# 容器里的两个网页入口：QQ 登录 / SnowLuma 管理
+print_entries() {
+    printf '\n\033[1m网页入口\033[0m\n'
+    printf '  QQ 登录（noVNC）   http://localhost:6081\n'
+    if [ -n "$VNC_PASS" ]; then
+        printf '      VNC 密码       %s\n' "$VNC_PASS"
+    else
+        printf '      VNC 密码       见 docker logs %s | grep "remote desktop password"\n' "$CONTAINER"
+    fi
+    printf '  SnowLuma 管理      http://localhost:5099\n'
+    printf '  （WebUI 密码是你首次启动时设的；忘了就重启容器看日志里的初始凭据）\n'
+}
+
+print_login_help() {
+    [ "$LOGIN_HELP_SHOWN" = "1" ] && return 0
+    LOGIN_HELP_SHOWN=1
+    printf '\n  \033[1mQQ 还没登录\033[0m\n'
+    printf '    1. 浏览器打开 http://localhost:6081（noVNC）\n'
+    if [ -n "$VNC_PASS" ]; then
+        printf '    2. VNC 密码：%s\n' "$VNC_PASS"
+    else
+        printf '    2. VNC 密码：docker logs %s | grep "remote desktop password"\n' "$CONTAINER"
+    fi
+    printf '    3. 用手机 QQ 扫码登录小号，建议勾选「自动登录」\n'
+    printf '    4. 登录后 OneBot 才会监听 3001，桥会在 30 秒内自动重连\n'
+    printf '       想立刻恢复：./start.sh --restart\n'
+    printf '       确认登录：docker logs %s | grep OneBot.WS-Server\n\n' "$CONTAINER"
+}
+
+# 探活：能拿到 QQ 昵称才算真上线
+check_qq() {
+    local out line
+    out="$(cd "$BRIDGE" && timeout 15 node src/index.js --probe 2>&1)"
+    line="$(printf '%s\n' "$out" | grep 'QQ 在线' | head -1 | sed 's/^[0-9:]* 信息 //')"
+    if [ -n "$line" ]; then
+        ok "$line"
+        return 0
+    fi
+    printf '%s\n' "$out" | sed 's/^/  /'
+    warn "桥在跑，但 QQ 还没上线"
+    print_login_help
+    return 1
+}
+
 # ---------- 0. 环境 ----------
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
 [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null || die "需要 Node 22 以上（现在是 $(node -v 2>/dev/null || echo 没装)）"
@@ -63,20 +110,24 @@ else
     ok "容器 $CONTAINER 在跑"
 fi
 
+# 从首次启动日志里取 noVNC 密码（之后重启不再打印，但密码还是这个）
+VNC_PASS="$(docker logs "$CONTAINER" 2>&1 | grep -m1 'remote desktop password:' | sed 's/.*remote desktop password:[[:space:]]*//' | tr -d '\r')"
+print_entries
+
 # 等 OneBot 配置能被读到（QQ 登录后才会生成/刷新）
-say "等 SnowLuma 就绪…"
+say "检查 OneBot 配置…"
 READY=0
 for _ in $(seq 1 40); do
     if docker exec "$CONTAINER" cat /app/data/config/onebot.json >/dev/null 2>&1; then
-        ok "OneBot 配置可读"
+        ok "OneBot 配置已读到"
         READY=1
         break
     fi
     sleep 1.5
 done
 if [ "$READY" = "0" ]; then
-    warn "等不到 OneBot 配置（QQ 可能还没登录）"
-    warn "去 http://localhost:6081 登录后，再执行 ./start.sh --restart"
+    warn "读不到 OneBot 配置（QQ 登录后 OneBot 才会生成）"
+    print_login_help
 fi
 
 # ---------- 2. dsh web（可选） ----------
@@ -110,6 +161,7 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; t
     else
         ok "qq-bridge 已经在跑（pid $(cat "$PID_FILE")）"
         say "看日志：tail -f $LOG"
+        check_qq || true
         exit 0
     fi
 fi
@@ -125,16 +177,14 @@ fi
 ok "qq-bridge 起来了（pid $(cat "$PID_FILE")）"
 
 # ---------- 4. 探活 ----------
-if (cd "$BRIDGE" && timeout 15 node src/index.js --probe 2>&1 | grep -q 'QQ 在线'); then
-    ok "QQ 在线，可以说话了"
-else
-    warn "桥在跑，但 QQ 还没上线（去 http://localhost:6081 登录）"
-fi
+check_qq || true
 
 cat <<EOF
 
   接下来：
     QQ         用你的号给 $(node -p "require('$BRIDGE/config.json').access.owner" 2>/dev/null || echo '小号') 发消息
+    登录 QQ    http://localhost:6081（noVNC）
+    管理        http://localhost:5099（SnowLuma WebUI）
     看日志     tail -f $LOG
     看状态     ./status.sh
     关掉       ./stop.sh

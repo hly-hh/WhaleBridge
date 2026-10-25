@@ -147,6 +147,8 @@ cp qq-bridge/config.example.json qq-bridge/config.json   # start.sh 也会自动
 ./status.sh             # 容器 / QQ / 桥 / dsh web / 最近日志
 ```
 
+`start.sh` 和 `status.sh` 会直接打印网页入口（QQ 登录用的 noVNC、SnowLuma 管理页，以及当前容器的 VNC 密码）；QQ 没登录时会额外给出扫码步骤。
+
 等价的 npm 脚本：
 
 ```bash

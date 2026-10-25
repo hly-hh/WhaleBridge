@@ -201,11 +201,12 @@ qq-bridge/data/                 # 全部不进 git
 
 1. 检查 Node ≥ 22、`qq-bridge/config.json` 存在、`docker` 可用。
 2. `docker inspect` 容器：不存在 → 报错并提示 docker run；停止 → `docker start`。
-3. 最多等 60 秒，直到能 `docker exec … cat onebot.json`（QQ 登录后才有）。
+3. 从 `docker logs` 取 VNC 密码，打印网页入口：QQ 登录 noVNC（6081）、SnowLuma 管理页（5099）。
+4. 最多等 60 秒，直到能 `docker exec … cat onebot.json`（QQ 登录后才有；volume 里已存在时会立即通过）。
 4. 可选 `--web`：用 `setsid nohup dsh web --no-open --port 8080` 起网页，写 `dsh-web.pid`。
 5. 认领/复用已有 bridge 进程；`--restart` 时先杀旧进程。
 6. `setsid nohup node src/index.js` 起桥，写 `qq-bridge.pid`，失败则打印日志尾部。
-7. 跑一次 `--probe` 探活，提示下一步操作。
+7. 跑一次 `--probe` 探活；成功显示 QQ 昵称，失败则打印扫码登录步骤（noVNC 地址 + VNC 密码 + 登录后自动重连说明）。
 
 ### 5.2 `stop.sh`
 
@@ -215,7 +216,7 @@ qq-bridge/data/                 # 全部不进 git
 
 ### 5.3 `status.sh`
 
-依次打印：容器状态、`--probe` 结果、bridge PID/运行时长、dsh web PID、日志最后 12 行。
+依次打印：容器状态、`--probe` 结果、bridge PID/运行时长、dsh web PID、日志最后 12 行。探活失败时会附上 noVNC / WebUI 入口和 VNC 密码。
 
 ## 6. SnowLuma 上游结构（只读参考）
 
