@@ -1,0 +1,15 @@
+{
+  "name": "qq-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SnowLuma (OneBot) <-> DeepSeek Harness 的 QQ 转发桥",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dry": "node src/index.js --dry",
+    "setup-profile": "bash setup-profile.sh"
+  }
+}

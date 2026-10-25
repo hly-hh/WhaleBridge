@@ -1,0 +1,29 @@
+{
+  "snowluma": {
+    "mode": "auto",
+    "container": "snowluma",
+    "configPath": "/app/data/config/onebot.json",
+    "host": "127.0.0.1",
+    "port": 3001,
+    "accessToken": ""
+  },
+  "dsh": {
+    "command": "dsh",
+    "profile": "qq",
+    "timeoutMs": 180000,
+    "workspace": "./data/workspace"
+  },
+  "access": {
+    "owner": 0,
+    "privateAllow": [],
+    "groupAllow": [],
+    "groupRequireAt": true,
+    "ownerAlwaysReply": true
+  },
+  "reply": {
+    "minIntervalMs": 1500,
+    "typingPerCharMs": 35,
+    "typingMaxMs": 4000,
+    "maxChars": 1200
+  }
+}

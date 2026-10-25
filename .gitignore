@@ -1,0 +1,12 @@
+# 运行时 / 本地配置（不进 git）
+qq-bridge/config.json
+qq-bridge/data/
+qq-bridge/node_modules/
+
+# 上游 SnowLuma 源码，独立 clone，不纳入本仓库
+SnowLuma/
+
+# 杂项
+*.log
+.DS_Store
+tmp/

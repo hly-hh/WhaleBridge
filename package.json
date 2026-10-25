@@ -1,0 +1,21 @@
+{
+  "name": "qq-dep",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SnowLuma + qq-bridge + DeepSeek Harness 的一键启动封装",
+  "scripts": {
+    "start": "bash start.sh",
+    "start:web": "bash start.sh --web",
+    "stop": "bash stop.sh",
+    "stop:all": "bash stop.sh --all",
+    "restart": "bash restart.sh",
+    "status": "bash status.sh",
+    "setup:profile": "cd qq-bridge && bash setup-profile.sh",
+    "probe": "cd qq-bridge && node src/index.js --probe",
+    "dry": "cd qq-bridge && node src/index.js --dry",
+    "test:e2e": "cd qq-bridge && bash tests/e2e.sh"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
